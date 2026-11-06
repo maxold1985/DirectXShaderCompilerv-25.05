@@ -39,7 +39,7 @@ jobs:
       - name: Build DXC
         shell: pwsh
         run: |
-          cmake --build build --config Release --target dxc dxcompiler dxil --parallel 4
+          cmake --build build --config Release --target dxc dxcompiler dxildll --parallel 4
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify and package binaries
