@@ -1,0 +1,64 @@
+name: Build DXC Windows x64
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout sources and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install CMake and Ninja
+        uses: lukka/get-cmake@latest
+
+      - name: Configure DXC Release x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -C cmake/caches/PredefinedParams.cmake `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DENABLE_SPIRV_CODEGEN=ON `
+            -DLLVM_INCLUDE_TESTS=OFF `
+            -DHLSL_INCLUDE_TESTS=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build DXC
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --target dxc dxcompiler dxil --parallel 4
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify and package binaries
+        shell: pwsh
+        run: |
+          $names = @('dxc.exe', 'dxcompiler.dll', 'dxil.dll')
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          foreach ($name in $names) {
+            $file = Get-ChildItem -Path build -Filter $name -Recurse -File | Where-Object { $_.FullName -match 'Release' } | Select-Object -First 1
+            if (-not $file) { throw "Missing expected build output: $name" }
+            Copy-Item $file.FullName -Destination (Join-Path package $name)
+          }
+          & ./package/dxc.exe --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload DXC Windows x64
+        uses: actions/upload-artifact@v4
+        with:
+          name: dxc-windows-x64
+          path: package/*
+          if-no-files-found: error
+          retention-days: 30
